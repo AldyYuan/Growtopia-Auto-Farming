@@ -1,193 +1,197 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
-using WindowsInput;
-using WindowsInput.Native;
 
 namespace Auto_Farming_Growtopia
 {
-    /// <summary>
-    /// Interaction logic for MainWindow.xaml
-    /// </summary>
     public partial class MainWindow : Window
     {
+        private CancellationTokenSource _canceller;
+
+    private IntPtr _growtopiaHandle = IntPtr.Zero;
+
+        private VirtualKey movement = VirtualKey.D;
+
+        private enum VirtualKey : uint
+        {
+            A = 0x41,
+            D = 0x44,
+            Space = 0x20
+        }
+
+        private const uint WM_KEYDOWN = 0x0100;
+        private const uint WM_KEYUP = 0x0101;
+
+        [DllImport("user32.dll")]
+        private static extern bool PostMessage(
+            IntPtr hWnd,
+            uint Msg,
+            IntPtr wParam,
+            IntPtr lParam
+        );
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindow(IntPtr hWnd);
+
         public MainWindow()
         {
             InitializeComponent();
         }
 
-        InputSimulator inputSimulator = new InputSimulator();
-        private VirtualKeyCode movement = VirtualKeyCode.VK_D;
-        private CancellationTokenSource _canceller;
-
         private void Button_Click(object sender, RoutedEventArgs e)
         {
-            bool blocks = true;
-            bool others = false;
-            btnStop.IsEnabled = true;
-            btnStart.IsEnabled = false;
-            _canceller = new CancellationTokenSource();
+            bool blocks = block.IsChecked == true;
+            bool others = other.IsChecked == true;
 
             if (left.IsChecked == true)
             {
-                movement = VirtualKeyCode.VK_A;
-            } else if (right.IsChecked == true)
-            {
-                movement = VirtualKeyCode.VK_D;
+                movement = VirtualKey.A;
             }
-            if (block.IsChecked == false && other.IsChecked == false)
+            else if (right.IsChecked == true)
             {
-                blocks = false;
-                others = false;
-            } else if (block.IsChecked == true)
-            {
-                blocks = true;
-                others = false;
-            } else if (other.IsChecked == true)
-            {
-                others = true;
-                blocks = false;
+                movement = VirtualKey.D;
             }
 
-            BringMainWindowToFront("Growtopia");
-            farm(blocks, others);
+            var process = Process.GetProcessesByName("Growtopia")
+                .FirstOrDefault();
+
+            if (process == null || process.MainWindowHandle == IntPtr.Zero)
+            {
+                MessageBox.Show(
+                    "Open Growtopia and enter your world first.",
+                    "Growtopia Auto Farming",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning
+                );
+
+                return;
+            }
+
+            _growtopiaHandle = process.MainWindowHandle;
+
+            _canceller = new CancellationTokenSource();
+
+            btnStart.IsEnabled = false;
+            btnStop.IsEnabled = true;
+
+            _ = FarmAsync(blocks, others);
         }
 
-        private void btnStop_Click(object sender, RoutedEventArgs e)
+        private async void btnStop_Click(object sender, RoutedEventArgs e)
         {
-            stop();
+            await StopAsync();
         }
 
-        public void stop()
+        private async Task StopAsync()
         {
-            BringMainWindowToFront("Growtopia");
-            _canceller.Cancel();
-            inputSimulator.Keyboard.KeyUp(movement);
-            inputSimulator.Keyboard.KeyUp(VirtualKeyCode.SPACE);
+            if (_canceller != null)
+            {
+                _canceller.Cancel();
+            }
+
+            ReleaseKeys();
+
             btnStop.IsEnabled = false;
             btnStart.IsEnabled = true;
-            Thread.Sleep(500);
-            BringMainWindowToFront("Auto Farming Growtopia");
+
+            await Task.Delay(100);
         }
 
-        private async void farm(bool blocks, bool others)
-        {
-            await Task.Run(() =>
-            {
-                do
-                {
-                    if (blocks == true)
-                    {
-                        inputSimulator.Keyboard.KeyDown(movement);
-                        inputSimulator.Keyboard.KeyDown(VirtualKeyCode.SPACE);
-                        Thread.Sleep(250);
-                        inputSimulator.Keyboard.KeyUp(movement);
-                        inputSimulator.Keyboard.KeyUp(VirtualKeyCode.SPACE);
-                    }
-                    else if (others == true)
-                    {
-                        inputSimulator.Keyboard.KeyDown(VirtualKeyCode.SPACE);
-                        Thread.Sleep(500);
-                        inputSimulator.Keyboard.KeyDown(movement);
-                        Thread.Sleep(100);
-                        inputSimulator.Keyboard.KeyUp(movement);
-                        inputSimulator.Keyboard.KeyUp(VirtualKeyCode.SPACE);
-                    }
-                    else if (blocks == false && others == false)
-                    {
-                        inputSimulator.Keyboard.KeyDown(movement);
-                        Thread.Sleep(250);
-                        inputSimulator.Keyboard.KeyUp(movement);
-                    }
-
-                    if (_canceller.Token.IsCancellationRequested)
-                    {
-                        _canceller.Dispose();
-                        break;
-                    }
-
-                } while (true);
-            });
-        }
-
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
-        private static extern bool ShowWindow(IntPtr hWnd, ShowWindowEnum flags);
-
-        [System.Runtime.InteropServices.DllImport("user32.dll")]
-        private static extern int SetForegroundWindow(IntPtr hwnd);
-
-        private enum ShowWindowEnum
-        {
-            Hide = 0,
-            ShowNormal = 1, ShowMinimized = 2, ShowMaximized = 3,
-            Maximize = 3, ShowNormalNoActivate = 4, Show = 5,
-            Minimize = 6, ShowMinNoActivate = 7, ShowNoActivate = 8,
-            Restore = 9, ShowDefault = 10, ForceMinimized = 11
-        };
-
-        public void BringMainWindowToFront(string processName)
+        private async Task FarmAsync(bool blocks, bool others)
         {
             try
             {
-                // get the process
-                Process bProcess = Process.GetProcessesByName(processName).FirstOrDefault();
-
-                // check if the process is running
-                if (bProcess != null)
+                while (!_canceller.Token.IsCancellationRequested)
                 {
-                    // check if the window is hidden / minimized
-                    if (bProcess.MainWindowHandle == IntPtr.Zero)
+                    if (!IsWindow(_growtopiaHandle))
                     {
-                        // the window is hidden so try to restore it before setting focus.
-                        ShowWindow(bProcess.Handle, ShowWindowEnum.Restore);
+                        break;
                     }
 
-                    // set user the focus to the window
-                    SetForegroundWindow(bProcess.MainWindowHandle);
+                    if (blocks)
+                    {
+                        KeyDown(movement);
+                        KeyDown(VirtualKey.Space);
+
+                        await Task.Delay(250, _canceller.Token);
+
+                        KeyUp(movement);
+                        KeyUp(VirtualKey.Space);
+                    }
+                    else if (others)
+                    {
+                        KeyDown(VirtualKey.Space);
+
+                        await Task.Delay(500, _canceller.Token);
+
+                        KeyDown(movement);
+
+                        await Task.Delay(100, _canceller.Token);
+
+                        KeyUp(movement);
+                        KeyUp(VirtualKey.Space);
+                    }
+                    else
+                    {
+                        KeyDown(movement);
+
+                        await Task.Delay(250, _canceller.Token);
+
+                        KeyUp(movement);
+                    }
                 }
-                else
-                {
-                    // the process is not running, so start it
-                    Process.Start(processName);
-                }
-            } catch (Exception ex)
+            }
+            catch (OperationCanceledException)
             {
-                ex.ToString();
-                MessageBoxResult msg = MessageBox.Show("Open Growtopia and go to your world first", "Growtopia Auto Farming Warning", MessageBoxButton.OK, MessageBoxImage.Error);
-                if (msg == MessageBoxResult.OK)
+                // Expected when stopping.
+            }
+            finally
+            {
+                ReleaseKeys();
+
+                Dispatcher.Invoke(() =>
                 {
-                    inputSimulator.Keyboard.KeyUp(movement);
-                    inputSimulator.Keyboard.KeyUp(VirtualKeyCode.SPACE);
                     btnStop.IsEnabled = false;
                     btnStart.IsEnabled = true;
-                }
+                });
             }
         }
 
-        private void Window_MouseDown(object sender, MouseButtonEventArgs e)
+        private void KeyDown(VirtualKey key)
         {
-            if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
-            {
-                this.DragMove();
-            }
-        }
-
-        private void Window_Loaded(object sender, RoutedEventArgs e)
-        {
-            if ((bool)Properties.Settings.Default["FirstRun"] == true)
-            {
-                Properties.Settings.Default["FirstRun"] = false;
-                Properties.Settings.Default.Save();
-                MessageBox.Show("You must allow Spacebar for punch in Growtopia first", "Growtopia Auto Farming Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
-            } else
-            {
+            if (_growtopiaHandle == IntPtr.Zero)
                 return;
-            }
+
+            PostMessage(
+                _growtopiaHandle,
+                WM_KEYDOWN,
+                (IntPtr)key,
+                IntPtr.Zero
+            );
+        }
+
+        private void KeyUp(VirtualKey key)
+        {
+            if (_growtopiaHandle == IntPtr.Zero)
+                return;
+
+            PostMessage(
+                _growtopiaHandle,
+                WM_KEYUP,
+                (IntPtr)key,
+                IntPtr.Zero
+            );
+        }
+
+        private void ReleaseKeys()
+        {
+            KeyUp(movement);
+            KeyUp(VirtualKey.Space);
         }
 
         private void block_Checked(object sender, RoutedEventArgs e)
@@ -199,5 +203,30 @@ namespace Auto_Farming_Growtopia
         {
             block.IsChecked = false;
         }
+
+        private void Window_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.Left)
+            {
+                DragMove();
+            }
+        }
+
+        private void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+            if ((bool)Properties.Settings.Default["FirstRun"] == true)
+            {
+                Properties.Settings.Default["FirstRun"] = false;
+                Properties.Settings.Default.Save();
+
+                MessageBox.Show(
+                    "You must allow Spacebar for punch in Growtopia first",
+                    "Growtopia Auto Farming Warning",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning
+                );
+            }
+        }
     }
+
 }
