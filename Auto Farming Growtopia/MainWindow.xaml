@@ -20,8 +20,9 @@
                 </RadioButton>
             </WrapPanel>
             <WrapPanel>
-                <CheckBox Checked="block_Checked" x:Name="block" Margin="4" Foreground="SaddleBrown" FontWeight="Bold" FontSize="14">Block</CheckBox>
-                <CheckBox Checked="other_Checked" x:Name="other" Margin="4" Foreground="SaddleBrown" FontWeight="Bold" FontSize="14">Other</CheckBox>
+                <CheckBox Checked="Mode_Checked" x:Name="block" Margin="4" Foreground="SaddleBrown" FontWeight="Bold" FontSize="14">Block</CheckBox>
+                <CheckBox Checked="Mode_Checked" x:Name="other" Margin="4" Foreground="SaddleBrown" FontWeight="Bold" FontSize="14">Other</CheckBox>
+                <CheckBox x:Name="provider" Content="Providers" Checked="Mode_Checked"  Margin="4" Foreground="SaddleBrown" FontWeight="Bold" FontSize="14" />
             </WrapPanel>
             <WrapPanel HorizontalAlignment="Center" Margin="8">
                 <Button Padding="4" Margin="8" Click="Button_Click" x:Name="btnStart" Background="CadetBlue" Foreground="White" FontSize="20">Start</Button>
